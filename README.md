@@ -6,36 +6,36 @@ Nosotros hemos decidido hacer dos propuestas. La primera una aplicación que mue
 
 La segunda propuesta ha sido crear un mecanismo de autentificación facial donde solo permita el acceso al sistema a aquellas personas autorizadas.
 
-Tabmién cabe destacar que el código se ha desarrollado teniendo en cuenta los principios de ingenieria de software mas importantes y sus fundamentos. Por lo tanto el código escrito es extensible, modular, fácil de mantener y de escalar.
+Tabmién cabe destacar que el código se ha desarrollado teniendo en cuenta los principios de ingenieria de software más importantes y sus fundamentos. Por lo tanto, el código escrito es extensible, modular y fácil de mantener y de escalar.
 
 # Propuesta 1
 
 ## Fase de diseño de producto
 
-El diseño de esta propuesta se realizo primeramente en Figma para comprobar si eramos capaces de crear una interfaz que pudiera mostrarse correctamente en la cámara con la información requerida. Tras varias iteraciones acabamos con el siguiente diseño.
+El diseño de esta propuesta se realizó primeramente en Figma para comprobar si éramos capaces de crear una interfaz que pudiera mostrarse correctamente en la cámara con la información requerida. Tras varias iteraciones acabamos con el siguiente diseño.
 
 ![](documentation/propuesta1.png)
 
 ## Fase de diseño del pipeline
 
-Para realizar el proyecto hemos decidido optar primero por la creación del pipeline que vamos a necesitar para lograr el resultado esperado y las difernetes interfaces que representan cada step dentro del pipeline.
+Para realizar el proyecto hemos decidido optar primero por la creación del pipeline que vamos a necesitar para lograr el resultado esperado y las diferentes interfaces que representan cada step dentro del pipeline.
 
 El pipeline sería el siguiente.
 
 ![](documentation/pipeline1.png)
 
-Como podemos observar consta de tres fases
-- FaceDetector: es el encargado de realizar la detección de la cara dentro del frame extraido de la camara
-- FaceQualifier: es el encargado de extraer toda la información de la persona que necesitamos y devuelve una instancia de una clase Person
+Como podemos observar consta de tres fases:
+- FaceDetector: es el encargado de realizar la detección de la cara dentro del frame extraido de la cámara.
+- FaceQualifier: es el encargado de extraer toda la información de la persona que necesitamos y devuelve una instancia de una clase Person.
 - FaceDisplay: recibe toda la información de la persona y pinta la UI en pantalla.
 
-Como hemos podido comprobar en los resultados las fases han sido consistentes y nos han permitido abordar la práctica con éxito.
+Como hemos podido comprobar en los resultados, las fases han sido consistentes y nos han permitido abordar la práctica con éxito.
 
 ## Fase de diseño de software
 
 ### Modelo
 
-Respecto al diseño de software lo primero que hemos echo es definir nuestro modelo. Conjunto de clases que van a representar la información que necesitamos a lo largo de nuestro flujo y a su vez servirán de contrato entre las diferentes steps del pipeline.
+Respecto al diseño de software, lo primero que hemos echo ha sido definir nuestro modelo. Un conjunto de clases que van a representar la información que necesitamos a lo largo de nuestro flujo y, a su vez, servirán de contrato entre las diferentes steps del pipeline.
 
 
 ```python
@@ -111,17 +111,16 @@ class FaceQualificationDisplay:
         pass
 ```
 
-Como vemos todas estan tipadas y queda claro cuales son las entradas y salidas de cada fase. De esta forma las tratamos como cajas negras que podran permitirse multiples implementaciones y sustituciones en un futuro.
+Como vemos todas están tipadas y queda claro cuáles son las entradas y salidas de cada fase. De esta forma, las tratamos como cajas negras que podrán permitirse multiples implementaciones y sustituciones en un futuro.
 
 
 ### Infraestructura
 
-En esta capa hemos realizado varias implementaciones de cada una de steps del pipeline. Mostremos cada una de ellas.
+En esta capa hemos realizado varias implementaciones de cada una de las steps del pipeline. Mostremos cada una de ellas.
 
 #### FaceDetector
 
 Encargada de recibir un frame y devolver una detección de una cara. Hemos implementado ViolaJones, RetinaFace y Mediapipe.
-
 
 ViolaJones
 
@@ -148,6 +147,7 @@ class ViolaJonesFaceDetector(FaceDetector):
     def _convert_image_to_gray(self, image : np.ndarray) -> np.ndarray:
         import cv2
         return cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+```
 
 Retina face
 
@@ -160,6 +160,7 @@ class RetinafaceFaceDetector(FaceDetector):
     def _convert_to_face_detector_result(self, image, faces) -> List[FaceDetectorResult]:
         bounding_boxes = [BoundingBox(Point(x, y), Point(w, h)) for (x, y, w, h) in faces]
         return [FaceDetectorResult(ImageUtils.crop(image, bounding_box), bounding_box) for bounding_box in bounding_boxes]
+```
 
 MediaPipe
 
@@ -185,13 +186,13 @@ class MediaPipeFaceDetector(FaceDetector):
         return [FaceDetectorResult(ImageUtils.crop(image, bounding_box), bounding_box) for bounding_box in bounding_boxes]
 ```
 
-
-Para esta aplicación hemos decidido quedarnos con Mediapipe debido a que tiene un buen promedio velocidad y calidad de la detección. Si bien el más lento y fiable es RetinaFace no servía para el uso en tiempo real y ViolaJones aunque rápido sabemos que falla con caras giradas o en perspectivas no frontales.
+Para esta aplicación hemos decidido quedarnos con Mediapipe debido a que tiene un buen promedio de velocidad y calidad de la detección. Si bien el más lento y fiable es RetinaFace, no servía para el uso en tiempo real y ViolaJones, aunque sea rápido. sabemos que falla con caras giradas o en perspectivas no frontales.
 
 #### FaceQualifier
 
 Este es el encargado de extraer la información de la cara de la detección antes realizada.
-Como en la práctica solo nos pedían usar deepface hemos realizado una única implementación con este. Sin embargo en un futuro se podría usar cualquier alternativa sin afectar a la ejecución del programa.
+
+Como en la práctica solo nos pedían usar deepface hemos realizado una única implementación con este. Sin embargo, en un futuro se podría usar cualquier alternativa sin afectar a la ejecución del programa.
 
 ```python
 from deepface import DeepFace
@@ -220,7 +221,7 @@ class DeepfaceFaceQualifier(FaceQualifier):
 
 #### FaceDisplay
 
-Al igual que el anterior hemos echo una única implementación de la interfaz usando OpenCV. En un futuro si quisieramos cambiar la "Skin" podríamos simplemente hacer otra implementación del display y hacerlo como queramos.
+Al igual que el anterior hemos echo una única implementación de la interfaz usando OpenCV. En un futuro si quisiéramos cambiar la "Skin", podríamos simplemente hacer otra implementación del display y hacerlo como queramos.
 
 ```python
 import cv2 as cv
@@ -329,7 +330,7 @@ class OpenCVFaceQualificationDisplay(FaceQualificationDisplay):
 
 ## Ejecución del programa
 
-La ejecución del programa como siempre viene definida por un while loop que recoge las imagenes de la camara y las pasa a través de todo el pipeline.
+La ejecución del programa como siempre viene definida por un while loop que recoge las imágenes de la cámara y las pasa a través de todo el pipeline.
 
 ```python
 import cv2 as cv
@@ -364,31 +365,31 @@ El resultado ha quedado bastante similar a los diseños propuestos. Cosa de la q
 
 ## Fase de diseño de producto
 
-De nuevo para esta fase hemos usado Figma y hemos definido como va a ser la interacción con el usuario.
+De nuevo, para esta fase hemos usado Figma y hemos definido cómo va a ser la interacción con el usuario.
 
-Constara de cuatro pantallas bien reconocibles. La pantalla de lock. La pantalla de recognizing face. La pantalla de access granted. Y la pantalla de access denied.
+Constará de cuatro pantallas bien reconocibles: la pantalla de lock, La pantalla de recognizing face, la pantalla de access granted y la pantalla de access denied.
 
 ![](documentation/pantallas.png)
 
 
 ## Fase de diseño del pipeline
 
-El pipeline en este caso es bastante mas sencillo pues solo consta de dos etapas.
+El pipeline en este caso es bastante más sencillo pues solo consta de dos etapas.
 
-- FaceDetection: detectar la cara dentro del frame seleccionado
-- FaceComparator: comparar la cara con nuestra base de datos para saber si el usuario esta garantizado. En nuestro caso nuestra base de datos son un conjunto de imagenes guardadas en local de nosotros mismos.
+- FaceDetection: detectar la cara dentro del frame seleccionado.
+- FaceComparator: comparar la cara con nuestra base de datos para saber si el usuario está garantizado. En nuestro caso, nuestra base de datos son un conjunto de imágenes guardadas en local de nosotros mismos.
 
 ![](documentation/pipeline2.png)
 
-Sin embargo lo dificil ha sido modelar el funcionamiento de la aplicación en si mismo. Para ello hemos tratado la aplicación como una máquina de estados finitos cuyo diagrama sería el siguiente
+Sin embargo, lo dificil ha sido modelar el funcionamiento de la aplicación en sí mismo. Para ello hemos tratado la aplicación como una máquina de estados finitos cuyo diagrama sería el siguiente:
 
 ![](documentation/automata.png)
 
-Hemos creado en el código una pequeña librería encargada de manajar y gestionar máquinas de estado para así poder realizar con éxito la implementación.
+Hemos creado en el código una pequeña librería encargada de manejar y gestionar máquinas de estado para así poder realizar con éxito la implementación.
 
 ### Modelo
 
-Las diferentes clases que conforman el modelo serían las siguientes
+Las diferentes clases que conforman el modelo serían las siguientes:
 
 ```python
 from typing import Callable
@@ -449,9 +450,9 @@ class FaceComparatorResult:
     similarity: float
 ```
 
-Como vemos tenemos clases como State o Transition que nos dan pistas de como va a funcionar nuestra máquina de estados.
+Como vemos, tenemos clases como State o Transition que nos dan pistas de cómo va a funcionar nuestra máquina de estados.
 
-Por último tenemos la clase en si que representa la maquina de estados formada por un conjunto de estados que a su vez tienen un conjunto de transiciones.
+Por último, tenemos la clase en sí, que representa la máquina de estados formada por un conjunto de estados que, a su vez, tienen un conjunto de transiciones.
 
 ```python
 from __future__ import annotations
@@ -494,9 +495,9 @@ class StateMachine(ABC):
 
 En la capa de aplicación contenemos las interfaces usadas en el Pipeline.
 
-Una de ellas ya ha sido explicada que es la FaceDetector, por lo tanto la obviaremos.
+Una de ellas ya ha sido explicada, la FaceDetector, por lo tanto la obviaremos.
 
-La siguiente sería la interfaz del FaceComparator
+La siguiente sería la interfaz del FaceComparator.
 
 ```python
 class FaceComparator:
@@ -504,7 +505,7 @@ class FaceComparator:
         pass
 ```
 
-A su vez también tenemos la interfaz de una pantalla de autentificación que representará pues cada una de las 4 pantallas mostradas anteriormente.
+A su vez, también tenemos la interfaz de una pantalla de autentificación que representará pues cada una de las 4 pantallas mostradas anteriormente.
 
 ```python
 class AuthenticationScreen(ABC):
@@ -516,11 +517,11 @@ class AuthenticationScreen(ABC):
 
 ### Infraestructura
 
-Aqui tendremos las diferentes implementaciones de las interfaces anteriormente mencionadas
+Aquí tendremos las diferentes implementaciones de las interfaces anteriormente mencionadas.
 
 #### FaceComparator
 
-Aqui solo tenemos una implementación que es el deepface comparator.
+Aqui solo tenemos una implementación, que es el deepface comparator.
 
 ```python
 from deepface import DeepFace
@@ -536,7 +537,7 @@ class DeepfaceFaceComparator(FaceComparator):
 
 #### AuthenticationScreen
 
-Aqui como sabemos tenemos las cuatro patnallas antes mostradas. Aunque como todas menos una cumplen con tener un icono en el centro y un texto hemos decidido crear una abstracción que nos permitirá ahorrar código llamada IconAuthenticationScreen.
+Aqui como sabemos tenemos las cuatro patnallas antes mostradas. Aunque como todas menos una cumplen con tener un icono en el centro y un texto, hemos decidido crear una abstracción que nos permitirá ahorrar código llamada IconAuthenticationScreen.
 
 ```python
 class IconAuthenticationScreen(AuthenticationScreen):
@@ -590,7 +591,7 @@ class AccessDeniedAuthenticationScreen(IconAuthenticationScreen):
         super().__init__(frame, "./assets/danger.png", (0, 0, 255), "ACCESS DENIED", bg_color=(0, 0, 255), alpha = 0.15)
 ```
 
-Por último la pantalla de FaceRecognition la hemos implementado haciendo uso del FaceLandmarker de mediapipe que da un efecto como de película de men in black.
+Por último, la pantalla de FaceRecognition la hemos implementado haciendo uso del FaceLandmarker de mediapipe que da un efecto como de película de Men in Black.
 
 ```python
 from mediapipe import solutions
@@ -664,14 +665,14 @@ class FaceRecognizerAuthenticationScreen(AuthenticationScreen):
         return annotated_image
 ```
 
-Resultado de la pantalla
+Resultado de la pantalla:
 
 ![](documentation/meninblack.png)
 
 
 ### Funcionamiento final
 
-Para el funcionamiento final hemos creado la máquina de estados añadiendo todas las transiciones usando la minilibreria antes creada. Se puede observar que gracias a la interfaz de la misma se hace bastante entendible y fácil crear una máquina de estados.
+Para el funcionamiento final hemos creado la máquina de estados añadiendo todas las transiciones usando la minilibrería antes creada. Se puede observar que gracias a la interfaz de la misma se hace bastante entendible y fácil crear una máquina de estados.
 
 ```python
 state_machine = StateMachine.start_building().add_state(
@@ -700,8 +701,7 @@ state_machine = StateMachine.start_building().add_state(
     ).build()
 ```
 
-
-Toda la lógica del pipeline hiría dentro de la clase FaceAuthorizator. También cabe mencionar que el proceso de reconocimiento facial lo hemos ejecutado en un hilo totalmente independiente para no bloquear la interfaz del usuario. Como vemos le pasas un directorio a esta clase y va uno por uno comprobando la similitud con cada una de las fotos del directorio y después en función de la media de similitudes decide si darte acceso o no darte acceso.
+Toda la lógica del pipeline iría dentro de la clase FaceAuthorizator. También cabe mencionar que el proceso de reconocimiento facial lo hemos ejecutado en un hilo totalmente independiente para no bloquear la interfaz del usuario. Como vemos, le pasas un directorio a esta clase y va uno por uno comprobando la similitud con cada una de las fotos del directorio y después en función de la media de similitudes decide si darte acceso o no darte acceso.
 
 ```python
 import random
