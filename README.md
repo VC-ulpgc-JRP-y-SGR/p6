@@ -356,6 +356,8 @@ cv.destroyAllWindows()
 
 ## Resultado final
 
+El resultado ha quedado bastante similar a los diseños propuestos. Cosa de la que estamos orgullosos.
+
 ![](documentation/result.png)
 
 # Propuesta 2
@@ -368,4 +370,405 @@ Constara de cuatro pantallas bien reconocibles. La pantalla de lock. La pantalla
 
 ![](documentation/pantallas.png)
 
-El resultado final ha quedado bastnate similar a los diseños cosa de la que estamos orgullosos.
+
+## Fase de diseño del pipeline
+
+El pipeline en este caso es bastante mas sencillo pues solo consta de dos etapas.
+
+- FaceDetection: detectar la cara dentro del frame seleccionado
+- FaceComparator: comparar la cara con nuestra base de datos para saber si el usuario esta garantizado. En nuestro caso nuestra base de datos son un conjunto de imagenes guardadas en local de nosotros mismos.
+
+![](documentation/pipeline2.png)
+
+Sin embargo lo dificil ha sido modelar el funcionamiento de la aplicación en si mismo. Para ello hemos tratado la aplicación como una máquina de estados finitos cuyo diagrama sería el siguiente
+
+![](documentation/automata.png)
+
+Hemos creado en el código una pequeña librería encargada de manajar y gestionar máquinas de estado para así poder realizar con éxito la implementación.
+
+### Modelo
+
+Las diferentes clases que conforman el modelo serían las siguientes
+
+```python
+from typing import Callable
+from functools import reduce
+
+
+@dataclass
+class Transition:
+    next_state : str
+    actions: List[Callable[[], bool]]
+
+    @staticmethod
+    def to(next_state : str) -> 'Transition':
+        return Transition(next_state, [])
+
+    def when(self, action : Callable[[], bool]) -> 'Transition':
+        self.actions.append(action)
+        return self
+
+    def evaluate_transition(self) -> bool:
+        for action in self.actions:
+            if action():
+                return True
+        return False
+
+class AuthenticationScreen(ABC):
+    @abstractmethod
+    def display(self) -> None:
+        pass
+    
+@dataclass
+class State:
+    is_initial : bool
+    name : str
+    screen : Callable[[], AuthenticationScreen]
+    transitions : List[Transition]
+    on_enter : Callable[[np.ndarray], None] = lambda frame: None
+    on_exit : Callable[[np.ndarray], None] = lambda frame: None
+
+    @staticmethod
+    def default(name : str, screen : Callable[[np.ndarray], AuthenticationScreen]) -> 'State':
+        return State(True, name, screen, [])
+    
+    @staticmethod
+    def of(name : str, screen : Callable[[np.ndarray], AuthenticationScreen]) -> 'State':
+        return State(False, name, screen, [])
+
+    def do(self, transition : Transition) -> 'State':
+        self.transitions.append(transition)
+        return self
+    
+    def do_on_enter(self, action : Callable[[], None]) -> 'State':
+        self.on_enter = action
+        return self
+
+@dataclass
+class FaceComparatorResult:
+    similarity: float
+```
+
+Como vemos tenemos clases como State o Transition que nos dan pistas de como va a funcionar nuestra máquina de estados.
+
+Por último tenemos la clase en si que representa la maquina de estados formada por un conjunto de estados que a su vez tienen un conjunto de transiciones.
+
+```python
+from __future__ import annotations
+
+class StateMachine(ABC):
+    class Builder:
+        def __init__(self) -> None:
+            self.states = []
+        
+        def add_state(self, state : State) -> 'Builder':
+            self.states.append(state)
+            return self
+        
+        def build(self) -> 'StateMachine':
+            return StateMachine(self.states)
+    
+    @staticmethod
+    def start_building() -> Builder:
+        return StateMachine.Builder()
+
+    def __init__(self, states: List[State] ) -> None:
+        self.states = states
+        self.current_state = list(filter(lambda x: x.is_initial, states))[0]
+        self.current_state.on_enter(frame)
+    
+    def execute(self, frame : np.array):
+        self.current_state.screen(frame).display()
+        self.evaluate_conditions(frame)
+    
+    def evaluate_conditions(self, frame) -> None:
+        for transition in self.current_state.transitions:
+            if transition.evaluate_transition():
+                self.current_state.on_exit(frame)
+                self.current_state = list(filter(lambda x: x.name == transition.next_state, self.states))[0]
+                self.current_state.on_enter(frame)
+                break
+```
+
+### Aplicación 
+
+En la capa de aplicación contenemos las interfaces usadas en el Pipeline.
+
+Una de ellas ya ha sido explicada que es la FaceDetector, por lo tanto la obviaremos.
+
+La siguiente sería la interfaz del FaceComparator
+
+```python
+class FaceComparator:
+    def compare(self, first_face: FaceDetectorResult, second_face: FaceDetectorResult) -> FaceComparatorResult:
+        pass
+```
+
+A su vez también tenemos la interfaz de una pantalla de autentificación que representará pues cada una de las 4 pantallas mostradas anteriormente.
+
+```python
+class AuthenticationScreen(ABC):
+    @abstractmethod
+    def display(self) -> None:
+        pass
+```
+
+
+### Infraestructura
+
+Aqui tendremos las diferentes implementaciones de las interfaces anteriormente mencionadas
+
+#### FaceComparator
+
+Aqui solo tenemos una implementación que es el deepface comparator.
+
+```python
+from deepface import DeepFace
+
+class DeepfaceFaceComparator(FaceComparator):
+    def compare(self, first_face, second_face):
+        input_image = first_face.image
+        comparator_image = second_face.image
+        result = DeepFace.verify(img1_path=input_image, img2_path=comparator_image, enforce_detection=False)
+        print(result)
+        return FaceComparatorResult(result["distance"])
+```
+
+#### AuthenticationScreen
+
+Aqui como sabemos tenemos las cuatro patnallas antes mostradas. Aunque como todas menos una cumplen con tener un icono en el centro y un texto hemos decidido crear una abstracción que nos permitirá ahorrar código llamada IconAuthenticationScreen.
+
+```python
+class IconAuthenticationScreen(AuthenticationScreen):
+    def __init__(self, frame : np.ndarray, icon_path : str, color : tuple, text : str, bg_color : str = None, alpha : float = 0.15) -> None:
+        self.frame = frame
+        self.icon_path = icon_path
+        self.color = color
+        self.text = text
+        self.bg_color = self.color if(bg_color == None) else bg_color
+        self.alpha  = alpha
+
+    def overlay_green_screen(self):
+        # Create a green screen of the same size as the frame
+        screen = np.full(self.frame.shape, self.bg_color, dtype=np.uint8)
+        alpha = self.alpha
+        self.frame[:,:] = cv2.addWeighted(self.frame, 1 - alpha, screen, alpha, 0)
+
+    def display(self) -> None:
+        self.overlay_green_screen()
+        ImageUtils.overlay_icon(image=self.frame, 
+                                icon_path=self.icon_path, 
+                                color=self.color, 
+                                icon_size=200, 
+                                point=(self.frame.shape[1] // 2, self.frame.shape[0] // 2))
+        #draw text that says Press any key to unlock
+        font_weight=2
+        font_size=1.2
+        text = self.text
+        text_size, _ = cv.getTextSize(text, cv.FONT_HERSHEY_DUPLEX, font_size, font_weight)
+        text_width, text_height = text_size
+        text_x = self.frame.shape[1] // 2 - text_width // 2
+        text_y = self.frame.shape[0] // 2 + text_height + 150
+        cv.putText(self.frame, text, (text_x, text_y), cv.FONT_HERSHEY_DUPLEX, font_size, self.color, font_weight, lineType = cv2.LINE_AA)
+```
+`
+Después tendríamos la LockScreen, AccessGrantedScreen y AccessDeniedScreen.
+
+```python
+import numpy as np
+
+class LockAuthenticationScreen(IconAuthenticationScreen):
+    def __init__(self, frame: np.ndarray) -> None:
+        super().__init__(frame, "./assets/lock.png", (255, 255, 255), "PRESS A KEY TO START FACE RECOGNITION", bg_color=(0, 0, 0), alpha=0.4)
+    
+class AccessGrantedAuthenticationScreen(IconAuthenticationScreen):
+    def __init__(self, frame: np.ndarray) -> None:
+        super().__init__(frame, "./assets/success.png", (0, 255, 0), "ACCESS GRANTED", bg_color=(0, 255, 0), alpha = 0.15)
+
+class AccessDeniedAuthenticationScreen(IconAuthenticationScreen):
+    def __init__(self, frame: np.ndarray) -> None:
+        super().__init__(frame, "./assets/danger.png", (0, 0, 255), "ACCESS DENIED", bg_color=(0, 0, 255), alpha = 0.15)
+```
+
+Por último la pantalla de FaceRecognition la hemos implementado haciendo uso del FaceLandmarker de mediapipe que da un efecto como de película de men in black.
+
+```python
+from mediapipe import solutions
+from mediapipe.framework.formats import landmark_pb2
+
+class FaceRecognizerAuthenticationScreen(AuthenticationScreen):
+    def __init__(self, frame: np.ndarray ) -> None:
+        self.frame = frame
+
+    def display(self) -> None:
+        self.draw_landmarks()
+        self.draw_processing_text()
+    
+    def draw_processing_text(self):
+        font_weight=2
+        font_size=1.2
+        text = "PROCESSING FACE"
+        text_size, _ = cv.getTextSize(text, cv.FONT_HERSHEY_DUPLEX, font_size, font_weight)
+        text_width, text_height = text_size
+        text_x = self.frame.shape[1] // 2 - text_width // 2
+        text_y = 300 
+        cv.putText(self.frame, text, (text_x, text_y), cv.FONT_HERSHEY_DUPLEX, font_size, (255, 255, 255), font_weight, lineType = cv2.LINE_AA)
+
+
+    def draw_landmarks(self):
+        base_options = python.BaseOptions(model_asset_path='./face_landmarker.task')
+        options = vision.FaceLandmarkerOptions(base_options=base_options,
+                                            output_face_blendshapes=True,
+                                            output_facial_transformation_matrixes=True)
+        detector = vision.FaceLandmarker.create_from_options(options)
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=self.frame)
+        detection_result = detector.detect(mp_image)
+        self.frame[::] = self.draw_landmarks_on_image(self.frame, detection_result)
+    
+    def draw_landmarks_on_image(self, rgb_image, detection_result):
+        face_landmarks_list = detection_result.face_landmarks
+        annotated_image = np.copy(rgb_image)
+
+        # Loop through the detected faces to visualize.
+        for idx in range(len(face_landmarks_list)):
+            face_landmarks = face_landmarks_list[idx]
+
+            # Draw the face landmarks.
+            face_landmarks_proto = landmark_pb2.NormalizedLandmarkList()
+            face_landmarks_proto.landmark.extend([
+            landmark_pb2.NormalizedLandmark(x=landmark.x, y=landmark.y, z=landmark.z) for landmark in face_landmarks
+            ])
+
+            solutions.drawing_utils.draw_landmarks(
+                image=annotated_image,
+                landmark_list=face_landmarks_proto,
+                connections=mp.solutions.face_mesh.FACEMESH_TESSELATION,
+                landmark_drawing_spec=None,
+                connection_drawing_spec=mp.solutions.drawing_styles
+                .get_default_face_mesh_tesselation_style())
+            solutions.drawing_utils.draw_landmarks(
+                image=annotated_image,
+                landmark_list=face_landmarks_proto,
+                connections=mp.solutions.face_mesh.FACEMESH_CONTOURS,
+                landmark_drawing_spec=None,
+                connection_drawing_spec=mp.solutions.drawing_styles
+                .get_default_face_mesh_contours_style())
+            solutions.drawing_utils.draw_landmarks(
+                image=annotated_image,
+                landmark_list=face_landmarks_proto,
+                connections=mp.solutions.face_mesh.FACEMESH_IRISES,
+                landmark_drawing_spec=None,
+                connection_drawing_spec=mp.solutions.drawing_styles
+                .get_default_face_mesh_iris_connections_style())
+
+        return annotated_image
+```
+
+Resultado de la pantalla
+
+![](documentation/meninblack.png)
+
+
+### Funcionamiento final
+
+Para el funcionamiento final hemos creado la máquina de estados añadiendo todas las transiciones usando la minilibreria antes creada. Se puede observar que gracias a la interfaz de la misma se hace bastante entendible y fácil crear una máquina de estados.
+
+```python
+state_machine = StateMachine.start_building().add_state(
+        State.default(
+            name="LOCK", 
+            screen=LockAuthenticationScreen)
+                    .do(Transition.to("RECOGNIZING").when(InputManager.is_space_pressed))
+    ).add_state(
+        State.of( 
+            name="RECOGNIZING", 
+            screen=FaceRecognizerAuthenticationScreen)
+                .do(Transition.to("GRANTED").when(authorizator.is_access_granted))
+                .do(Transition.to("DENIED").when(authorizator.is_access_denied))
+                .do_on_enter(authorizator.start_authorization_thread)
+    ).add_state(
+        State.of(
+            name="GRANTED", 
+            screen =AccessGrantedAuthenticationScreen)
+                    .do(Transition.to("LOCK").when(InputManager.is_space_pressed))
+    ).add_state(
+
+    State.of(
+          name="DENIED", 
+          screen=AccessDeniedAuthenticationScreen)
+            .do(Transition.to("LOCK").when(InputManager.is_space_pressed))
+    ).build()
+```
+
+
+Toda la lógica del pipeline hiría dentro de la clase FaceAuthorizator. También cabe mencionar que el proceso de reconocimiento facial lo hemos ejecutado en un hilo totalmente independiente para no bloquear la interfaz del usuario. Como vemos le pasas un directorio a esta clase y va uno por uno comprobando la similitud con cada una de las fotos del directorio y después en función de la media de similitudes decide si darte acceso o no darte acceso.
+
+```python
+import random
+import threading
+
+class MockFaceComparator(FaceComparator):
+    def compare(self, first_face : FaceDetectorResult, second_face : FaceDetectorResult, ) -> FaceComparatorResult:
+        return FaceComparatorResult(1)
+
+class FaceAuthorizator:
+    def __init__(self, face_detector: FaceDetector, face_comparator: FaceComparator, base_path: str, threshold: float):
+        self.is_authorizated = False
+        self.finished_recognition = False
+        self.face_comparator = face_comparator
+        self.face_detector = face_detector
+        self.base_path = base_path
+        self.threshold = threshold
+    
+    def load_person(self, path):
+        return cv.imread(self.base_path + path)
+    
+    def list_image_paths_in_base_path(self):
+        return [f for f in os.listdir(self.base_path) if os.path.isfile(os.path.join(self.base_path, f))]
+
+    def set_authorizated(self, frame):
+        detection_results = []
+        for image in self.list_image_paths_in_base_path():
+            try:
+                detected_person = self.face_detector.detect(frame)
+                base_person = self.face_detector.detect(self.load_person(image))
+                if(len(base_person) < 1 or len(detected_person) < 1):
+                    self.is_authorizated = False
+                    self.finished_recognition=True
+                    break
+                detection_results.append(self.face_comparator.compare(detected_person[0], base_person[0]).similarity)
+            except:
+                continue
+        
+        if(len(detection_results) > 0):
+            detection_mean = sum(detection_results) / len(detection_results)
+            self.is_authorizated = True if detection_mean < self.threshold else False
+        else:
+            self.is_authorizated = False
+        self.finished_recognition=True
+    
+    def start_authorization_thread(self, frame):
+        timer = threading.Timer(0, lambda  : self.set_authorizated(frame))
+        timer.start()
+
+    def is_access_denied(self) -> bool:
+        return not self.is_authorizated and self.finished_recognition
+    
+    def is_access_granted(self) -> bool:
+        return self.is_authorizated and self.finished_recognition
+```
+
+Por último el main loop. Como vemos queda bastante escueto gracias al trabajo anteriormente realizado.
+
+```python
+while True:
+    ret, frame = video.read()
+    state_machine.execute(frame)
+    cv.imshow('Video', frame)
+
+    if cv.waitKey(1) & 0xFF == ord('q'):
+        break
+
+video.release()
+cv.destroyAllWindows()
+```
